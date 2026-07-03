@@ -1,11 +1,80 @@
-/* Unified Conversion Functions */
-size_t CodePage_MB2WC(const CodePageContext* ctx, 
-                      const unsigned char* src, size_t src_len, 
-                      wchar_t* dest, size_t dest_max);
+#ifndef _GMBXWC_H_
+#define _GMBXWC_H_
 
-size_t CodePage_WC2MB(const CodePageContext* ctx, 
-                      const wchar_t* src, size_t src_len, 
-                      unsigned char* dest, size_t dest_max);
+#include <windows.h>
+
+/* Struct layouts for the raw binary blobs */
+typedef struct {
+    unsigned char min_trail;
+    unsigned char max_trail;
+    unsigned short reserved;
+    unsigned long pool_offset;
+} ResourceTrailWindow;
+
+typedef struct {
+    unsigned long codepoint;
+    unsigned short dbcs_value;
+} ExtBMapping;
+
+typedef struct {
+    unsigned long start_index;   /* GB18030 linear calculation index start */
+    unsigned long end_index;     /* GB18030 linear calculation index end */
+    unsigned long start_unicode; /* Corresponding starting Unicode codepoint */
+} GB18030Range;
+
+/* Unified Program Header Mapping for Binary Blobs */
+typedef struct {
+    unsigned long magic;         /* 'CPBL', 'C219', or 'GB18' */
+    unsigned long code_page;
+    unsigned long off_windows;
+    unsigned long off_pool;
+    unsigned long off_dir;
+    unsigned long off_pages;
+    unsigned long off_extra;     /* Points to ExtB table OR GB18030 range table */
+    unsigned long extra_count;   /* Holds count for extra tracking entries */
+    unsigned long is_32bit_pool;
+} CodePageHeader;
+
+/* Unified Context Structure */
+typedef struct {
+    unsigned long magic;
+    unsigned long code_page;
+    int is_stateful_ebcdic;
+    int is_gb18030;
+    int is_32bit_pool;
+    int is_valid;
+
+    const ResourceTrailWindow* trail_windows;
+    const unsigned short* pool16;
+    const unsigned long* pool32;
+    const unsigned short* wchar_directory;
+    const unsigned short* wchar_page_pool;
+    
+    /* Extension B Mapping context */
+    const ExtBMapping* ext_b_table;
+    unsigned long ext_b_count;
+
+    /* GB18030 Range Context */
+    const GB18030Range* gb_ranges;
+    unsigned long gb_range_count;
+
+    /* Table entry arrays */
+    const unsigned short* dbcs_lead_table;
+    const unsigned short* sbcs_table;
+    const unsigned short* dbcs_first_byte_table;
+} CodePageContext;
+
+#define EBCDIC_MODE_SBCS 0
+#define EBCDIC_MODE_DBCS 1
+
+/* Unified Conversion Functions */
+unsigned long CodePage_MB2WC(const CodePageContext* ctx, 
+                      const unsigned char* src, unsigned long src_len, 
+                      wchar_t* dest, unsigned long dest_max);
+
+unsigned long CodePage_WC2MB(const CodePageContext* ctx, 
+                      const wchar_t* src, unsigned long src_len, 
+                      unsigned char* dest, unsigned long dest_max);
 
 #if 0
 /* sample code for using library */
@@ -67,3 +136,4 @@ void CleanupApplicationEncodings(void) {
     }
 }
 #endif
+#endif /* _GMBXWC_H_ */

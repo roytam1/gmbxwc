@@ -1,53 +1,4 @@
-typedef struct {
-    unsigned long start_index;   /* GB18030 linear calculation index start */
-    unsigned long end_index;     /* GB18030 linear calculation index end */
-    unsigned long start_unicode; /* Corresponding starting Unicode codepoint */
-} GB18030Range;
-
-/* Unified Program Header Mapping for Binary Blobs */
-typedef struct {
-    unsigned long magic;         /* 'CPBL', 'C219', or 'GB18' */
-    unsigned long code_page;
-    unsigned long off_windows;
-    unsigned long off_pool;
-    unsigned long off_dir;
-    unsigned long off_pages;
-    unsigned long off_extra;     /* Points to ExtB table OR GB18030 range table */
-    unsigned long extra_count;   /* Holds count for extra tracking entries */
-    unsigned long is_32bit_pool;
-} CodePageHeader;
-
-/* Unified Context Structure */
-typedef struct {
-    unsigned long magic;
-    unsigned long code_page;
-    int is_stateful_ebcdic;
-    int is_gb18030;
-    int is_32bit_pool;
-    int is_valid;
-
-    const ResourceTrailWindow* trail_windows;
-    const unsigned short* pool16;
-    const unsigned long* pool32;
-    const unsigned short* wchar_directory;
-    const unsigned short* wchar_page_pool;
-    
-    /* Extension B Mapping context */
-    const ExtBMapping* ext_b_table;
-    unsigned long ext_b_count;
-
-    /* GB18030 Range Context */
-    const GB18030Range* gb_ranges;
-    unsigned long gb_range_count;
-
-    /* Table entry arrays */
-    const unsigned short* dbcs_lead_table;
-    const unsigned short* sbcs_table;
-    const unsigned short* dbcs_first_byte_table;
-} CodePageContext;
-
-#define EBCDIC_MODE_SBCS 0
-#define EBCDIC_MODE_DBCS 1
+#include "gmbxwc.h"
 
 /* Internal Helper: Binary Search for Extension B */
 static unsigned short FindExtB(const ExtBMapping* table, int count, unsigned long codepoint) {
@@ -118,7 +69,7 @@ CodePageContext InitCodePageConverter(const unsigned char* blob_data) {
 /* ========================================================================= */
 /* MULTIBYTE -> WIDECHAR UNIFIED IMPLEMENTATION                              */
 /* ========================================================================= */
-size_t CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* src, size_t src_len, wchar_t* dest, size_t dest_max) {
+unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* src, unsigned long src_len, wchar_t* dest, unsigned long dest_max) {
     const unsigned char* src_end;
     size_t written = 0;
     int ebcdic_mode = EBCDIC_MODE_SBCS;
@@ -251,7 +202,7 @@ size_t CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* src, size
 /* ========================================================================= */
 /* WIDECHAR -> MULTIBYTE UNIFIED IMPLEMENTATION                              */
 /* ========================================================================= */
-size_t CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, size_t src_len, unsigned char* dest, size_t dest_max) {
+unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, unsigned long src_len, unsigned char* dest, unsigned long dest_max) {
     const wchar_t* src_end;
     size_t written = 0;
     int ebcdic_mode = EBCDIC_MODE_SBCS;
@@ -303,11 +254,12 @@ size_t CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, size_t src
                     const GB18030Range* r = &ctx->gb_ranges[mid];
                     unsigned long r_len = r->end_index - r->start_index;
                     if (cp_val >= r->start_unicode && cp_val <= (r->start_unicode + r_len)) {
+                        unsigned char b4, b3, b2, b1;
                         unsigned long idx = r->start_index + (cp_val - r->start_unicode);
-                        unsigned char b4 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
-                        unsigned char b3 = (unsigned char)(0x81 + (idx % 126)); idx /= 126;
-                        unsigned char b2 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
-                        unsigned char b1 = (unsigned char)(0x81 + idx);
+                        b4 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
+                        b3 = (unsigned char)(0x81 + (idx % 126)); idx /= 126;
+                        b2 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
+                        b1 = (unsigned char)(0x81 + idx);
                         
                         if (dest) {
                             if (written + 4 > dest_max) break;
