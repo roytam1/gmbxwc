@@ -1,0 +1,365 @@
+typedef struct {
+    unsigned long start_index;   /* GB18030 linear calculation index start */
+    unsigned long end_index;     /* GB18030 linear calculation index end */
+    unsigned long start_unicode; /* Corresponding starting Unicode codepoint */
+} GB18030Range;
+
+/* Unified Program Header Mapping for Binary Blobs */
+typedef struct {
+    unsigned long magic;         /* 'CPBL', 'C219', or 'GB18' */
+    unsigned long code_page;
+    unsigned long off_windows;
+    unsigned long off_pool;
+    unsigned long off_dir;
+    unsigned long off_pages;
+    unsigned long off_extra;     /* Points to ExtB table OR GB18030 range table */
+    unsigned long extra_count;   /* Holds count for extra tracking entries */
+    unsigned long is_32bit_pool;
+} CodePageHeader;
+
+/* Unified Context Structure */
+typedef struct {
+    unsigned long magic;
+    unsigned long code_page;
+    int is_stateful_ebcdic;
+    int is_gb18030;
+    int is_32bit_pool;
+    int is_valid;
+
+    const ResourceTrailWindow* trail_windows;
+    const unsigned short* pool16;
+    const unsigned long* pool32;
+    const unsigned short* wchar_directory;
+    const unsigned short* wchar_page_pool;
+    
+    /* Extension B Mapping context */
+    const ExtBMapping* ext_b_table;
+    unsigned long ext_b_count;
+
+    /* GB18030 Range Context */
+    const GB18030Range* gb_ranges;
+    unsigned long gb_range_count;
+
+    /* Table entry arrays */
+    const unsigned short* dbcs_lead_table;
+    const unsigned short* sbcs_table;
+    const unsigned short* dbcs_first_byte_table;
+} CodePageContext;
+
+#define EBCDIC_MODE_SBCS 0
+#define EBCDIC_MODE_DBCS 1
+
+/* Internal Helper: Binary Search for Extension B */
+static unsigned short FindExtB(const ExtBMapping* table, int count, unsigned long codepoint) {
+    int left = 0;
+    int right = count - 1;
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        if (table[mid].codepoint == codepoint) return table[mid].dbcs_value;
+        if (table[mid].codepoint < codepoint) left = mid + 1;
+        else right = mid - 1;
+    }
+    return 0;
+}
+
+CodePageContext InitCodePageConverter(const unsigned char* blob_data) {
+    CodePageContext ctx;
+    const CodePageHeader* h = (const CodePageHeader*)blob_data;
+
+    ctx.is_valid = 0;
+    ctx.magic = h->magic;
+    ctx.code_page = h->code_page;
+    ctx.is_stateful_ebcdic = 0;
+    ctx.is_gb18030 = 0;
+    ctx.is_32bit_pool = h->is_32bit_pool;
+    
+    ctx.trail_windows = (const ResourceTrailWindow*)(blob_data + h->off_windows);
+    ctx.pool16 = (const unsigned short*)(blob_data + h->off_pool);
+    ctx.pool32 = (const unsigned long*)(blob_data + h->off_pool);
+    ctx.wchar_directory = (const unsigned short*)(blob_data + h->off_dir);
+    ctx.wchar_page_pool = (const unsigned short*)(blob_data + h->off_pages);
+    
+    ctx.ext_b_table = 0;
+    ctx.ext_b_count = 0;
+    ctx.gb_ranges = 0;
+    ctx.gb_range_count = 0;
+    ctx.dbcs_lead_table = 0;
+    ctx.sbcs_table = 0;
+    ctx.dbcs_first_byte_table = 0;
+
+    /* Route 1: GB18030 Engine Configuration */
+    if (h->magic == 0x38314247) { /* 'GB18' */
+        ctx.is_gb18030 = 1;
+        ctx.dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx.gb_ranges = (const GB18030Range*)(blob_data + h->off_extra);
+        ctx.gb_range_count = h->extra_count;
+        ctx.is_valid = 1;
+    }
+    /* Route 2: Stateful EBCDIC Configuration */
+    else if (h->magic == 0x39313243) { /* 'C219' */
+        ctx.is_stateful_ebcdic = 1;
+        ctx.sbcs_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx.dbcs_first_byte_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader) + 512);
+        ctx.is_valid = 1;
+    }
+    /* Route 3: Standard Stateless DBCS Configuration */
+    else if (h->magic == 0x4C425043) { /* 'CPBL' */
+        ctx.dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        if (h->off_extra != 0) {
+            ctx.ext_b_table = (const ExtBMapping*)(blob_data + h->off_extra);
+            ctx.ext_b_count = h->extra_count;
+        }
+        ctx.is_valid = 1;
+    }
+
+    return ctx;
+}
+
+/* ========================================================================= */
+/* MULTIBYTE -> WIDECHAR UNIFIED IMPLEMENTATION                              */
+/* ========================================================================= */
+size_t CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* src, size_t src_len, wchar_t* dest, size_t dest_max) {
+    const unsigned char* src_end;
+    size_t written = 0;
+    int ebcdic_mode = EBCDIC_MODE_SBCS;
+
+    if (!ctx || !ctx->is_valid || !src) return 0;
+    src_end = src + src_len;
+
+    while (src < src_end) {
+        unsigned char b1 = *src++;
+        unsigned long cp_val = 0;
+
+        /* GB18030 Stream Processing Path */
+        if (ctx->is_gb18030) {
+            unsigned short lead_info = ctx->dbcs_lead_table[b1];
+            if ((lead_info & 0x8000) == 0) {
+                cp_val = lead_info; /* 1-Byte ASCII Match */
+            } else {
+                if (src >= src_end) break;
+                {
+                    unsigned char b2 = *src;
+                    /* Check if the second byte marks an algorithmic 4-byte boundary */
+                    if (b2 >= 0x30 && b2 <= 0x39) {
+                        src++; /* Safe to consume b2 */
+                        if (src + 2 > src_end) break;
+                        {
+                            unsigned char b3 = *src++;
+                            unsigned char b4 = *src++;
+                            /* Compute sequential GB18030 coordinate index */
+                            unsigned long idx = (b1 - 0x81) * 12600UL + (b2 - 0x30) * 1260UL + (b3 - 0x81) * 10UL + (b4 - 0x30);
+                            
+                            /* Binary search the compressed translation ranges */
+                            long left = 0;
+                            long right = (long)ctx->gb_range_count - 1;
+                            cp_val = 0xFFFD;
+                            while (left <= right) {
+                                long mid = left + (right - left) / 2;
+                                const GB18030Range* r = &ctx->gb_ranges[mid];
+                                if (idx >= r->start_index && idx <= r->end_index) {
+                                    cp_val = r->start_unicode + (idx - r->start_index);
+                                    break;
+                                }
+                                if (r->start_index < idx) left = mid + 1;
+                                else right = mid - 1;
+                            }
+                        }
+                    } else {
+                        /* Normal 2-Byte Range execution pass */
+                        unsigned char b2_real = *src++;
+                        unsigned short w_idx = lead_info & 0x7FFF;
+                        ResourceTrailWindow w = ctx->trail_windows[w_idx];
+                        if (b2_real >= w.min_trail && b2_real <= w.max_trail) {
+                            cp_val = ctx->pool16[w.pool_offset + (b2_real - w.min_trail)];
+                        } else {
+                            cp_val = 0xFFFD;
+                        }
+                    }
+                }
+            }
+        }
+        /* Path A: Stateful EBCDIC Logic */
+        if (ctx->is_stateful_ebcdic) {
+            if (b1 == 0x0E) { ebcdic_mode = EBCDIC_MODE_DBCS; continue; }
+            if (b1 == 0x0F) { ebcdic_mode = EBCDIC_MODE_SBCS; continue; }
+
+            if (ebcdic_mode == EBCDIC_MODE_SBCS) {
+                cp_val = ctx->sbcs_table[b1];
+            } else {
+                if (src >= src_end) break;
+                {
+                    unsigned char b2 = *src++;
+                    unsigned short w_idx = ctx->dbcs_first_byte_table[b1];
+                    if (w_idx != 0xFFFF) {
+                        ResourceTrailWindow w = ctx->trail_windows[w_idx];
+                        if (b2 >= w.min_trail && b2 <= w.max_trail) {
+                            cp_val = ctx->pool16[w.pool_offset + (b2 - w.min_trail)];
+                        } else {
+                            cp_val = 0xFFFD;
+                        }
+                    } else {
+                        cp_val = 0xFFFD;
+                    }
+                }
+            }
+        } 
+        /* Path B: Stateless DBCS Logic (Big5, Shift-JIS, etc) */
+        else {
+            unsigned short lead_info = ctx->dbcs_lead_table[b1];
+            if ((lead_info & 0x8000) == 0) {
+                cp_val = lead_info;
+            } else {
+                if (src >= src_end) break;
+                {
+                    /* Normal 2-Byte Range execution pass */
+                    unsigned char b2_real = *src++;
+                    unsigned short w_idx = lead_info & 0x7FFF;
+                    ResourceTrailWindow w = ctx->trail_windows[w_idx];
+
+                    if (b2_real >= w.min_trail && b2_real <= w.max_trail) {
+                        /* If flag is true, use 32-bit index stride offset lookup */
+                        if (ctx->is_32bit_pool) {
+                            cp_val = ctx->pool32[w.pool_offset + (b2_real - w.min_trail)];
+                        } else {
+                            cp_val = ctx->pool16[w.pool_offset + (b2_real - w.min_trail)];
+                        }
+                    } else {
+                        cp_val = 0xFFFD; /* Fallback replacement mark */
+                    }
+                }
+            }
+        }
+
+        /* Write value to buffer */
+        if (cp_val > 0xFFFF) {
+            if (dest) {
+                if (written + 2 > dest_max) break;
+                cp_val -= 0x10000;
+                dest[written++] = (wchar_t)(0xD800 + (cp_val >> 10));
+                dest[written++] = (wchar_t)(0xDC00 + (cp_val & 0x3FF));
+            } else { written += 2; }
+        } else {
+            if (dest) {
+                if (written + 1 > dest_max) break;
+                dest[written++] = (wchar_t)cp_val;
+            } else { written += 1; }
+        }
+    }
+    return written;
+}
+
+/* ========================================================================= */
+/* WIDECHAR -> MULTIBYTE UNIFIED IMPLEMENTATION                              */
+/* ========================================================================= */
+size_t CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, size_t src_len, unsigned char* dest, size_t dest_max) {
+    const wchar_t* src_end;
+    size_t written = 0;
+    int ebcdic_mode = EBCDIC_MODE_SBCS;
+
+    if (!ctx || !ctx->is_valid || !src) return 0;
+    src_end = src + src_len;
+
+    while (src < src_end) {
+        wchar_t wc = *src++;
+        unsigned long cp_val = 0;
+
+        if (wc >= 0xD800 && wc <= 0xDBFF) {
+            if (src >= src_end) break;
+            {
+                wchar_t low = *src++;
+                cp_val = 0x10000 + ((wc - 0xD800) << 10) + (low - 0xDC00);
+            }
+        } else {
+            cp_val = wc;
+        }
+
+        /* GB18030 Encoding Logic Injection */
+        if (ctx->is_gb18030) {
+            unsigned short page_idx = ctx->wchar_directory[(cp_val >> 8) & 0xFF];
+            unsigned long trie_dbcs = 0;
+            
+            if (cp_val <= 0xFFFF) {
+                trie_dbcs = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
+            }
+
+            /* If trie resolves value, character maps directly to 1 or 2 bytes */
+            if (trie_dbcs != 0) {
+                if (trie_dbcs <= 0xFF) {
+                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)trie_dbcs; } else { written++; }
+                } else {
+                    if (dest) {
+                        if (written + 2 > dest_max) break;
+                        dest[written++] = (unsigned char)(trie_dbcs >> 8);
+                        dest[written++] = (unsigned char)(trie_dbcs & 0xFF);
+                    } else { written += 2; }
+                }
+            } else {
+                /* Trie miss indicates target falls into 4-byte algorithmic space */
+                long left = 0;
+                long right = (long)ctx->gb_range_count - 1;
+                int found = 0;
+                while (left <= right) {
+                    long mid = left + (right - left) / 2;
+                    const GB18030Range* r = &ctx->gb_ranges[mid];
+                    unsigned long r_len = r->end_index - r->start_index;
+                    if (cp_val >= r->start_unicode && cp_val <= (r->start_unicode + r_len)) {
+                        unsigned long idx = r->start_index + (cp_val - r->start_unicode);
+                        unsigned char b4 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
+                        unsigned char b3 = (unsigned char)(0x81 + (idx % 126)); idx /= 126;
+                        unsigned char b2 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
+                        unsigned char b1 = (unsigned char)(0x81 + idx);
+                        
+                        if (dest) {
+                            if (written + 4 > dest_max) break;
+                            dest[written++] = b1; dest[written++] = b2;
+                            dest[written++] = b3; dest[written++] = b4;
+                        } else { written += 4; }
+                        found = 1; break;
+                    }
+                    if (r->start_unicode < cp_val) left = mid + 1;
+                    else right = mid - 1;
+                }
+                if (!found) {
+                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = '?'; } else { written++; }
+                }
+            }
+            continue;
+        }
+        if (ctx->is_stateful_ebcdic) {
+            if (cp_val <= 0xFF) {
+                if (ebcdic_mode == EBCDIC_MODE_DBCS) {
+                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = 0x0F; } else { written++; }
+                    ebcdic_mode = EBCDIC_MODE_SBCS;
+                }
+                if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)cp_val; } else { written++; }
+            } else {
+                if (ebcdic_mode == EBCDIC_MODE_SBCS) {
+                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = 0x0E; } else { written++; }
+                    ebcdic_mode = EBCDIC_MODE_DBCS;
+                }
+                if (dest) {
+                    if (written + 2 > dest_max) break;
+                    dest[written++] = (unsigned char)(cp_val >> 8);
+                    dest[written++] = (unsigned char)(cp_val & 0xFF);
+                } else {
+                    written += 2;
+                }
+            }
+        } else {
+            /* Standard Stateless MultiByte Writer */
+            if (cp_val <= 0xFF) {
+                if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)cp_val; } else { written++; }
+            } else {
+                if (dest) {
+                    if (written + 2 > dest_max) break;
+                    dest[written++] = (unsigned char)(cp_val >> 8);
+                    dest[written++] = (unsigned char)(cp_val & 0xFF);
+                } else {
+                    written += 2;
+                }
+            }
+        }
+    }
+    return written;
+}
+
