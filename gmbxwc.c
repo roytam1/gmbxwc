@@ -360,7 +360,7 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
 
             if (is_unmapped_char) {
                 if (lpbUnmapped) *lpbUnmapped = TRUE;
-                target_mb = 0x3F; /* '?' fallback string */
+                target_mb = ctx->is_stateful_ebcdic ? 0x6F : 0x3F; /* '?' fallback string */
             }
 
             /* State-dependent structural serialization step */
