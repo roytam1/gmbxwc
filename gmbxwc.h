@@ -12,8 +12,8 @@ typedef struct {
 } ResourceTrailWindow;
 
 typedef struct {
-    unsigned long codepoint;
-    unsigned short dbcs_value;
+    unsigned long unicode;
+    unsigned short mb_val;
 } ExtBMapping;
 
 typedef struct {

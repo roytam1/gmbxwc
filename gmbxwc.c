@@ -1,18 +1,5 @@
 #include "gmbxwc.h"
 
-/* Internal Helper: Binary Search for Extension B */
-static unsigned short FindExtB(const ExtBMapping* table, int count, unsigned long codepoint) {
-    int left = 0;
-    int right = count - 1;
-    while (left <= right) {
-        int mid = left + (right - left) / 2;
-        if (table[mid].codepoint == codepoint) return table[mid].dbcs_value;
-        if (table[mid].codepoint < codepoint) left = mid + 1;
-        else right = mid - 1;
-    }
-    return 0;
-}
-
 CodePageContext InitCodePageConverter(const unsigned char* blob_data) {
     CodePageContext ctx;
     const CodePageHeader* h = (const CodePageHeader*)blob_data;
@@ -324,33 +311,56 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
             continue;
         }
 
-        /* Native MultiByte Lookups (Supports BMP + Big5-HKSCS Plane 2 Mappings) */
+        /* Native MultiByte Lookups */
         {
             unsigned long target_mb = 0;
             BOOL is_unmapped_char = FALSE;
             unsigned long page_num = cp_val >> 8;
 
-            /* Ensure the resolved page fits within the loaded code-page directory bounds */
+            /* Case A: Character lives in the BMP -> Fast O(1) 2-Tier Array Lookup */
             if (page_num < ctx->wchar_dir_count) {
                 unsigned short page_idx = ctx->wchar_directory[page_num];
 
                 if (page_idx != 0xFFFF) {
                     target_mb = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
-
-                    /* Table yields 0 on a non-null input -> unmapped sequence */
                     if (target_mb == 0 && cp_val != 0) {
                         is_unmapped_char = TRUE;
                     }
                 } else {
-                    is_unmapped_char = TRUE; /* Entire 256-char page is missing from this code page */
+                    is_unmapped_char = TRUE; 
                 }
-            } else {
-                is_unmapped_char = TRUE; /* Out of physical Unicode range limits for this code page */
+            } 
+            /* Case B: Non-BMP Character (Plane 2 / Ext B) -> Target Binary Search */
+            else if (cp_val > 0xFFFF && ctx->ext_b_table && ctx->ext_b_count > 0) {
+                long left = 0;
+                long right = (long)ctx->ext_b_count - 1;
+                int found = 0;
+
+                while (left <= right) {
+                    long mid = left + (right - left) / 2;
+                    const ExtBMapping* entry = &ctx->ext_b_table[mid];
+
+                    if (entry->unicode == cp_val) {
+                        target_mb = entry->mb_val;
+                        found = 1;
+                        break;
+                    }
+                    if (entry->unicode < cp_val) {
+                        left = mid + 1;
+                    } else {
+                        right = mid - 1;
+                    }
+                }
+
+                if (!found) is_unmapped_char = TRUE;
+            } 
+            else {
+                is_unmapped_char = TRUE;
             }
 
             if (is_unmapped_char) {
                 if (lpbUnmapped) *lpbUnmapped = TRUE;
-                target_mb = 0x3F; /* '?' fallback */
+                target_mb = 0x3F; /* '?' fallback string */
             }
 
             /* State-dependent structural serialization step */

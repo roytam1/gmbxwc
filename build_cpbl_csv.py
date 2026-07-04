@@ -3,7 +3,7 @@ import struct
 import csv
 
 def parse_csv(filename, is_gb18030):
-    sbcs_map, dbcs_map, wc2mb = {}, {}, {}
+    sbcs_map, dbcs_map, wc2mb, ext_b_mappings = {}, {}, {}, {}
     dbcs_first_bytes = set()
     four_byte_list = []
 
@@ -32,8 +32,14 @@ def parse_csv(filename, is_gb18030):
                 idx = (b1 - 0x81) * 12600 + (b2 - 0x30) * 1260 + (b3 - 0x81) * 10 + (b4 - 0x30)
                 four_byte_list.append((idx, uc_val))
 
-            if uc_val <= 0xFFFF and len(mb_bytes) <= 2:
-                wc2mb[uc_val] = mb_bytes[0] if len(mb_bytes) == 1 else (mb_bytes[0] << 8) | mb_bytes[1]
+            if len(mb_bytes) <= 2:
+                val = mb_bytes[0] if len(mb_bytes) == 1 else (mb_bytes[0] << 8) | mb_bytes[1]
+
+                if uc_val <= 0xFFFF:
+                    wc2mb[uc_val] = val
+                else:
+                    # Captures Plane 2 / HKSCS Extension B mappings seamlessly
+                    ext_b_mappings[uc_val] = val
 
     gb_ranges = []
     if four_byte_list:
@@ -49,13 +55,13 @@ def parse_csv(filename, is_gb18030):
                 curr_idx, curr_uc = idx, uc
         gb_ranges.append((start_idx, curr_idx, start_uc))
 
-    return sbcs_map, dbcs_map, wc2mb, dbcs_first_bytes, gb_ranges
+    return sbcs_map, dbcs_map, wc2mb, dbcs_first_bytes, gb_ranges, ext_b_mappings
 
 def build_blob(csv_path, cp_num, style):
     is_ebcdic = (style == "-ebcdic")
     is_gb18030 = (style == "-gb18030")
     
-    sbcs_map, dbcs_map, wc2mb, dbcs_first_bytes, gb_ranges = parse_csv(csv_path, is_gb18030)
+    sbcs_map, dbcs_map, wc2mb, dbcs_first_bytes, gb_ranges, ext_b_mappings = parse_csv(csv_path, is_gb18030)
     
     if is_gb18030: magic = b'GB18'
     elif is_ebcdic: magic = f"C{cp_num:03d}".encode('ascii')[:4]
@@ -102,7 +108,7 @@ def build_blob(csv_path, cp_num, style):
     off_dir = off_pool + (len(trail_pool) * pool_stride)
     off_pages = off_dir + (len(page_directory) * 2)
     off_extra = off_pages + (len(unique_pages) * 512)
-    extra_count = len(gb_ranges) if is_gb18030 else 0
+    extra_count = len(gb_ranges) if is_gb18030 else len(ext_b_mappings)
     wchar_dir_count = len(page_directory)
 
     blob = bytearray()
@@ -125,6 +131,13 @@ def build_blob(csv_path, cp_num, style):
     if is_gb18030:
         for start_i, end_i, start_uc in gb_ranges:
             blob.extend(struct.pack('<III', start_i, end_i, start_uc))
+    else:
+        sorted_ext_b = sorted(ext_b_mappings.items(), key=lambda x: x[0])
+        # When writing out the 'off_extra' section payload:
+        for uni, dbcs in sorted_ext_b:
+            # Pack as 4-byte Unicode followed by 2-byte DBCS (padded to 4-bytes if alignment is needed)
+            # Here we use standard 6-byte entries packed tightly:
+            blob.extend(struct.pack('<IH', uni, dbcs))
 
     return blob
 
