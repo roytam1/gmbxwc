@@ -70,11 +70,11 @@ typedef struct {
 /* Unified Conversion Functions */
 unsigned long CodePage_MB2WC(const CodePageContext* ctx, 
                       const unsigned char* src, unsigned long src_len, 
-                      wchar_t* dest, unsigned long dest_max);
+                      wchar_t* dest, unsigned long dest_max, BOOL* lpbUnmapped);
 
 unsigned long CodePage_WC2MB(const CodePageContext* ctx, 
                       const wchar_t* src, unsigned long src_len, 
-                      unsigned char* dest, unsigned long dest_max);
+                      unsigned char* dest, unsigned long dest_max, BOOL* lpbUnmapped);
 
 #if 0
 /* sample code for using library */

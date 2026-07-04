@@ -250,6 +250,7 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
         wchar_t wc = *src++;
         unsigned long cp_val = 0;
 
+        /* Resolve UTF-16 Surrogate Pairs to a flat 32-bit Unicode Codepoint */
         if (wc >= 0xD800 && wc <= 0xDBFF) {
             if (src >= src_end) {
                 if (lpbUnmapped) *lpbUnmapped = TRUE;
@@ -263,13 +264,18 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
             cp_val = wc;
         }
 
-        /* GB18030 Encoding Logic Injection */
+        /* GB18030 Encoding Logic Injection Path */
         if (ctx->is_gb18030) {
-            unsigned short page_idx = ctx->wchar_directory[(cp_val >> 8) & 0xFF];
+            unsigned short page_idx = 0;
             unsigned long trie_dbcs = 0;
-            
-            if (cp_val <= 0xFFFF) {
-                trie_dbcs = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
+            unsigned long page_num = cp_val >> 8;
+
+            /* Guard directory access against structural table bounds */
+            if (page_num < ctx->wchar_dir_count) {
+                page_idx = ctx->wchar_directory[page_num];
+                if (page_idx != 0xFFFF) {
+                    trie_dbcs = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
+                }
             }
 
             if (trie_dbcs != 0) {
@@ -317,28 +323,36 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
             continue;
         }
 
-        /* Standard Native Lookups via Reverse 2-Tier Page Index Mapping */
+        /* Native MultiByte Lookups (Supports BMP + Big5-HKSCS Plane 2 Mappings) */
         {
             unsigned long target_mb = 0;
             BOOL is_unmapped_char = FALSE;
+            unsigned long page_num = cp_val >> 8;
 
-            if (cp_val > 0xFFFF) {
-                is_unmapped_char = TRUE;
-            } else {
-                unsigned short page_idx = ctx->wchar_directory[(cp_val >> 8) & 0xFF];
-                target_mb = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
+            /* Ensure the resolved page fits within the loaded code-page directory bounds */
+            if (page_num < ctx->wchar_dir_count) {
+                unsigned short page_idx = ctx->wchar_directory[page_num];
 
-                /* 0 result from table on a non-null input indicates missing structural translation linkage */
-                if (target_mb == 0 && cp_val != 0) {
-                    is_unmapped_char = TRUE;
+                if (page_idx != 0xFFFF) {
+                    target_mb = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
+
+                    /* Table yields 0 on a non-null input -> unmapped sequence */
+                    if (target_mb == 0 && cp_val != 0) {
+                        is_unmapped_char = TRUE;
+                    }
+                } else {
+                    is_unmapped_char = TRUE; /* Entire 256-char page is missing from this code page */
                 }
+            } else {
+                is_unmapped_char = TRUE; /* Out of physical Unicode range limits for this code page */
             }
 
             if (is_unmapped_char) {
                 if (lpbUnmapped) *lpbUnmapped = TRUE;
-                target_mb = 0x3F; /* Standard physical ASCII boundary fallback text ('?') */
+                target_mb = 0x3F; /* '?' fallback */
             }
 
+            /* State-dependent structural serialization step */
             if (ctx->is_stateful_ebcdic) {
                 if (target_mb <= 0xFF) {
                     if (ebcdic_mode == EBCDIC_MODE_DBCS) {
@@ -358,7 +372,7 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
                     } else { written += 2; }
                 }
             } else {
-                /* Standard Stateless MultiByte Writer (Shift-JIS, Big5, etc.) */
+                /* Standard Stateless MultiByte Writer (Shift-JIS, Big5-HKSCS, etc.) */
                 if (target_mb <= 0xFF) {
                     if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)target_mb; } else { written++; }
                 } else {
