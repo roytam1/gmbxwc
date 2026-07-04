@@ -1,17 +1,17 @@
 rem Shift-JIS (CP932)
-python build_cpbl.py CP932.TXT CP932.DAT -stateless -bin 932
+python build_cpbl_csv.py CP932.TXT CP932.DAT -stateless -bin 932
 
 rem GBK (CP936)
-python build_cpbl.py CP936.TXT CP936.DAT -stateless -bin 936
+python build_cpbl_csv.py CP936.TXT CP936.DAT -stateless -bin 936
 
 rem EUC-KR (CP949)
-python build_cpbl.py CP949.TXT CP949.DAT -stateless -bin 949
+python build_cpbl_csv.py CP949.TXT CP949.DAT -stateless -bin 949
 
 rem Big5 (UAO 2.50) (CP950)
-python build_cpbl.py CP950.TXT CP950.DAT -stateless -bin 950
+python build_cpbl_csv.py CP950.TXT CP950.DAT -stateless -bin 950
 
 rem Big5-HKSCS-2008 (CP951)
-python build_cpbl.py HKSCS2K8.TXT HKSCS2K8.DAT -stateless -bin 951
+python build_cpbl_csv.py HKSCS2K8.TXT HKSCS2K8.DAT -stateless -bin 951
 
 rem GB18030 (CP54936)
 python build_cpbl_ucm.py gb18030-2022.ucm GB18030.DAT -gb18030 -bin 54936
@@ -30,3 +30,24 @@ python build_cpbl_ucm.py ibm-933_P110-1995.ucm IBM933.DAT -ebcdic -bin 21933
 
 rem IBM EBCDIC Simplified Chinese Host mixed with 1880 UDC, superset of 5031
 python build_cpbl_ucm.py ibm-935_P110-1999.ucm IBM935.DAT -ebcdic -bin 21935
+
+rem legacy NLS CP20000
+python build_cpbl_nls.py c_20000.nls c_20000.dat
+
+rem legacy NLS CP20001
+python build_cpbl_nls.py c_20001.nls c_20001.dat
+
+rem legacy NLS CP20002
+python build_cpbl_nls.py c_20002.nls c_20002.dat
+
+rem legacy NLS CP20003
+python build_cpbl_nls.py c_20003.nls c_20003.dat
+
+rem legacy NLS CP20004
+python build_cpbl_nls.py c_20004.nls c_20004.dat
+
+rem legacy NLS CP20005
+python build_cpbl_nls.py c_20005.nls c_20005.dat
+
+rem legacy NLS CP20932
+python build_cpbl_nls.py c_20932.nls c_20932.dat

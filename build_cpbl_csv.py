@@ -61,8 +61,8 @@ def build_blob(csv_path, cp_num, style):
     elif is_ebcdic: magic = f"C{cp_num:03d}".encode('ascii')[:4]
     else: magic = b'CPBL'
 
-    # Fixed 36-Byte Header Layout for strict 4-byte boundaries
-    base_header_size = 36
+    # Fixed 40-Byte Header Layout for strict 4-byte boundaries
+    base_header_size = 40
     dbcs_lead_table = [0] * 256
     sbcs_table = [0] * 256
     trail_windows, trail_pool = [], []
@@ -103,10 +103,11 @@ def build_blob(csv_path, cp_num, style):
     off_pages = off_dir + (len(page_directory) * 2)
     off_extra = off_pages + (len(unique_pages) * 512)
     extra_count = len(gb_ranges) if is_gb18030 else 0
+    wchar_dir_count = len(page_directory)
 
     blob = bytearray()
     # Header format: magic, cp, windows, pool, dir, pages, extra, count, is_32bit_pool
-    blob.extend(struct.pack('<4sIIIIIIII', magic, cp_num, off_windows, off_pool, off_dir, off_pages, off_extra, extra_count, is_32bit_pool))
+    blob.extend(struct.pack('<4sIIIIIIIII', magic, cp_num, off_windows, off_pool, off_dir, off_pages, off_extra, extra_count, is_32bit_pool, wchar_dir_count))
     
     if is_ebcdic:
         for val in sbcs_table: blob.extend(struct.pack('<H', val))

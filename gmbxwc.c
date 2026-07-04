@@ -28,6 +28,7 @@ CodePageContext InitCodePageConverter(const unsigned char* blob_data) {
     ctx.pool16 = (const unsigned short*)(blob_data + h->off_pool);
     ctx.pool32 = (const unsigned long*)(blob_data + h->off_pool);
     ctx.wchar_directory = (const unsigned short*)(blob_data + h->off_dir);
+    ctx.wchar_dir_count = h->wchar_dir_count; /* NEW: Stored safely in context */
     ctx.wchar_page_pool = (const unsigned short*)(blob_data + h->off_pages);
     
     ctx.ext_b_table = 0;
