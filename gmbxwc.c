@@ -69,9 +69,9 @@ CodePageContext InitCodePageConverter(const unsigned char* blob_data) {
 /* ========================================================================= */
 /* MULTIBYTE -> WIDECHAR UNIFIED IMPLEMENTATION                              */
 /* ========================================================================= */
-unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* src, unsigned long src_len, wchar_t* dest, unsigned long dest_max) {
+unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* src, unsigned long src_len, wchar_t* dest, unsigned long dest_max, BOOL* lpbUnmapped) {
     const unsigned char* src_end;
-    size_t written = 0;
+    unsigned long written = 0;
     int ebcdic_mode = EBCDIC_MODE_SBCS;
 
     if (!ctx || !ctx->is_valid || !src) return 0;
@@ -87,32 +87,41 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
             if ((lead_info & 0x8000) == 0) {
                 cp_val = lead_info; /* 1-Byte ASCII Match */
             } else {
-                if (src >= src_end) break;
+                if (src >= src_end) {
+                    if (lpbUnmapped) *lpbUnmapped = TRUE;
+                    break;
+                }
                 {
                     unsigned char b2 = *src;
                     /* Check if the second byte marks an algorithmic 4-byte boundary */
                     if (b2 >= 0x30 && b2 <= 0x39) {
                         src++; /* Safe to consume b2 */
-                        if (src + 2 > src_end) break;
+                        if (src + 2 > src_end) {
+                            if (lpbUnmapped) *lpbUnmapped = TRUE;
+                            break;
+                        }
                         {
                             unsigned char b3 = *src++;
                             unsigned char b4 = *src++;
-                            /* Compute sequential GB18030 coordinate index */
                             unsigned long idx = (b1 - 0x81) * 12600UL + (b2 - 0x30) * 1260UL + (b3 - 0x81) * 10UL + (b4 - 0x30);
-                            
-                            /* Binary search the compressed translation ranges */
                             long left = 0;
                             long right = (long)ctx->gb_range_count - 1;
+                            int range_found = 0;
+
                             cp_val = 0xFFFD;
                             while (left <= right) {
                                 long mid = left + (right - left) / 2;
                                 const GB18030Range* r = &ctx->gb_ranges[mid];
                                 if (idx >= r->start_index && idx <= r->end_index) {
                                     cp_val = r->start_unicode + (idx - r->start_index);
+                                    range_found = 1;
                                     break;
                                 }
                                 if (r->start_index < idx) left = mid + 1;
                                 else right = mid - 1;
+                            }
+                            if (!range_found) {
+                                if (lpbUnmapped) *lpbUnmapped = TRUE;
                             }
                         }
                     } else {
@@ -122,22 +131,34 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                         ResourceTrailWindow w = ctx->trail_windows[w_idx];
                         if (b2_real >= w.min_trail && b2_real <= w.max_trail) {
                             cp_val = ctx->pool16[w.pool_offset + (b2_real - w.min_trail)];
+                            if (cp_val == 0 || cp_val == 0xFFFD) {
+                                cp_val = 0xFFFD;
+                                if (lpbUnmapped) *lpbUnmapped = TRUE;
+                            }
                         } else {
                             cp_val = 0xFFFD;
+                            if (lpbUnmapped) *lpbUnmapped = TRUE;
                         }
                     }
                 }
             }
         }
         /* Path A: Stateful EBCDIC Logic */
-        if (ctx->is_stateful_ebcdic) {
+        else if (ctx->is_stateful_ebcdic) {
             if (b1 == 0x0E) { ebcdic_mode = EBCDIC_MODE_DBCS; continue; }
             if (b1 == 0x0F) { ebcdic_mode = EBCDIC_MODE_SBCS; continue; }
 
             if (ebcdic_mode == EBCDIC_MODE_SBCS) {
                 cp_val = ctx->sbcs_table[b1];
+                if (cp_val == 0 || cp_val == 0xFFFD) {
+                    cp_val = 0xFFFD;
+                    if (lpbUnmapped) *lpbUnmapped = TRUE;
+                }
             } else {
-                if (src >= src_end) break;
+                if (src >= src_end) {
+                    if (lpbUnmapped) *lpbUnmapped = TRUE;
+                    break;
+                }
                 {
                     unsigned char b2 = *src++;
                     unsigned short w_idx = ctx->dbcs_first_byte_table[b1];
@@ -145,11 +166,17 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                         ResourceTrailWindow w = ctx->trail_windows[w_idx];
                         if (b2 >= w.min_trail && b2 <= w.max_trail) {
                             cp_val = ctx->pool16[w.pool_offset + (b2 - w.min_trail)];
+                            if (cp_val == 0 || cp_val == 0xFFFD) {
+                                cp_val = 0xFFFD;
+                                if (lpbUnmapped) *lpbUnmapped = TRUE;
+                            }
                         } else {
                             cp_val = 0xFFFD;
+                            if (lpbUnmapped) *lpbUnmapped = TRUE;
                         }
                     } else {
                         cp_val = 0xFFFD;
+                        if (lpbUnmapped) *lpbUnmapped = TRUE;
                     }
                 }
             }
@@ -159,29 +186,38 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
             unsigned short lead_info = ctx->dbcs_lead_table[b1];
             if ((lead_info & 0x8000) == 0) {
                 cp_val = lead_info;
+                if (cp_val == 0xFFFD || (cp_val == 0 && b1 != 0)) {
+                    if (lpbUnmapped) *lpbUnmapped = TRUE;
+                }
             } else {
-                if (src >= src_end) break;
+                if (src >= src_end) {
+                    if (lpbUnmapped) *lpbUnmapped = TRUE;
+                    break;
+                }
                 {
-                    /* Normal 2-Byte Range execution pass */
                     unsigned char b2_real = *src++;
                     unsigned short w_idx = lead_info & 0x7FFF;
                     ResourceTrailWindow w = ctx->trail_windows[w_idx];
 
                     if (b2_real >= w.min_trail && b2_real <= w.max_trail) {
-                        /* If flag is true, use 32-bit index stride offset lookup */
                         if (ctx->is_32bit_pool) {
                             cp_val = ctx->pool32[w.pool_offset + (b2_real - w.min_trail)];
                         } else {
                             cp_val = ctx->pool16[w.pool_offset + (b2_real - w.min_trail)];
                         }
+                        if (cp_val == 0 || cp_val == 0xFFFD) {
+                            cp_val = 0xFFFD;
+                            if (lpbUnmapped) *lpbUnmapped = TRUE;
+                        }
                     } else {
-                        cp_val = 0xFFFD; /* Fallback replacement mark */
+                        cp_val = 0xFFFD;
+                        if (lpbUnmapped) *lpbUnmapped = TRUE;
                     }
                 }
             }
         }
 
-        /* Write value to buffer */
+        /* Write value to destination buffer */
         if (cp_val > 0xFFFF) {
             if (dest) {
                 if (written + 2 > dest_max) break;
@@ -202,9 +238,9 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
 /* ========================================================================= */
 /* WIDECHAR -> MULTIBYTE UNIFIED IMPLEMENTATION                              */
 /* ========================================================================= */
-unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, unsigned long src_len, unsigned char* dest, unsigned long dest_max) {
+unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, unsigned long src_len, unsigned char* dest, unsigned long dest_max, BOOL* lpbUnmapped) {
     const wchar_t* src_end;
-    size_t written = 0;
+    unsigned long written = 0;
     int ebcdic_mode = EBCDIC_MODE_SBCS;
 
     if (!ctx || !ctx->is_valid || !src) return 0;
@@ -215,7 +251,10 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
         unsigned long cp_val = 0;
 
         if (wc >= 0xD800 && wc <= 0xDBFF) {
-            if (src >= src_end) break;
+            if (src >= src_end) {
+                if (lpbUnmapped) *lpbUnmapped = TRUE;
+                break;
+            }
             {
                 wchar_t low = *src++;
                 cp_val = 0x10000 + ((wc - 0xD800) << 10) + (low - 0xDC00);
@@ -233,7 +272,6 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
                 trie_dbcs = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
             }
 
-            /* If trie resolves value, character maps directly to 1 or 2 bytes */
             if (trie_dbcs != 0) {
                 if (trie_dbcs <= 0xFF) {
                     if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)trie_dbcs; } else { written++; }
@@ -272,46 +310,66 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
                     else right = mid - 1;
                 }
                 if (!found) {
+                    if (lpbUnmapped) *lpbUnmapped = TRUE;
                     if (dest) { if (written + 1 > dest_max) break; dest[written++] = '?'; } else { written++; }
                 }
             }
             continue;
         }
-        if (ctx->is_stateful_ebcdic) {
-            if (cp_val <= 0xFF) {
-                if (ebcdic_mode == EBCDIC_MODE_DBCS) {
-                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = 0x0F; } else { written++; }
-                    ebcdic_mode = EBCDIC_MODE_SBCS;
-                }
-                if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)cp_val; } else { written++; }
+
+        /* Standard Native Lookups via Reverse 2-Tier Page Index Mapping */
+        {
+            unsigned long target_mb = 0;
+            BOOL is_unmapped_char = FALSE;
+
+            if (cp_val > 0xFFFF) {
+                is_unmapped_char = TRUE;
             } else {
-                if (ebcdic_mode == EBCDIC_MODE_SBCS) {
-                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = 0x0E; } else { written++; }
-                    ebcdic_mode = EBCDIC_MODE_DBCS;
-                }
-                if (dest) {
-                    if (written + 2 > dest_max) break;
-                    dest[written++] = (unsigned char)(cp_val >> 8);
-                    dest[written++] = (unsigned char)(cp_val & 0xFF);
-                } else {
-                    written += 2;
+                unsigned short page_idx = ctx->wchar_directory[(cp_val >> 8) & 0xFF];
+                target_mb = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
+
+                /* 0 result from table on a non-null input indicates missing structural translation linkage */
+                if (target_mb == 0 && cp_val != 0) {
+                    is_unmapped_char = TRUE;
                 }
             }
-        } else {
-            /* Standard Stateless MultiByte Writer */
-            if (cp_val <= 0xFF) {
-                if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)cp_val; } else { written++; }
-            } else {
-                if (dest) {
-                    if (written + 2 > dest_max) break;
-                    dest[written++] = (unsigned char)(cp_val >> 8);
-                    dest[written++] = (unsigned char)(cp_val & 0xFF);
+
+            if (is_unmapped_char) {
+                if (lpbUnmapped) *lpbUnmapped = TRUE;
+                target_mb = 0x3F; /* Standard physical ASCII boundary fallback text ('?') */
+            }
+
+            if (ctx->is_stateful_ebcdic) {
+                if (target_mb <= 0xFF) {
+                    if (ebcdic_mode == EBCDIC_MODE_DBCS) {
+                        if (dest) { if (written + 1 > dest_max) break; dest[written++] = 0x0F; } else { written++; }
+                        ebcdic_mode = EBCDIC_MODE_SBCS;
+                    }
+                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)target_mb; } else { written++; }
                 } else {
-                    written += 2;
+                    if (ebcdic_mode == EBCDIC_MODE_SBCS) {
+                        if (dest) { if (written + 1 > dest_max) break; dest[written++] = 0x0E; } else { written++; }
+                        ebcdic_mode = EBCDIC_MODE_DBCS;
+                    }
+                    if (dest) {
+                        if (written + 2 > dest_max) break;
+                        dest[written++] = (unsigned char)(target_mb >> 8);
+                        dest[written++] = (unsigned char)(target_mb & 0xFF);
+                    } else { written += 2; }
+                }
+            } else {
+                /* Standard Stateless MultiByte Writer (Shift-JIS, Big5, etc.) */
+                if (target_mb <= 0xFF) {
+                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)target_mb; } else { written++; }
+                } else {
+                    if (dest) {
+                        if (written + 2 > dest_max) break;
+                        dest[written++] = (unsigned char)(target_mb >> 8);
+                        dest[written++] = (unsigned char)(target_mb & 0xFF);
+                    } else { written += 2; }
                 }
             }
         }
     }
     return written;
 }
-
