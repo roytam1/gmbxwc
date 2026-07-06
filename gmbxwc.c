@@ -177,7 +177,7 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
         else {
             unsigned short lead_info = ctx->dbcs_lead_table[b1];
             if ((lead_info & 0x8000) == 0) {
-                cp_val = lead_info;
+                cp_val = b1 && lead_info ? lead_info : 0xFFFD;
                 if (cp_val == 0xFFFD || (cp_val == 0 && b1 != 0)) {
                     if (lpbUnmapped) *lpbUnmapped = TRUE;
                 }
