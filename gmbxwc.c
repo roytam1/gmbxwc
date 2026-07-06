@@ -1,57 +1,61 @@
 #include "gmbxwc.h"
 
-CodePageContext InitCodePageConverter(const unsigned char* blob_data) {
-    CodePageContext ctx;
+CodePageContext* InitCodePageConverter(const unsigned char* blob_data) {
     const CodePageHeader* h = (const CodePageHeader*)blob_data;
+    CodePageContext* ctx = (CodePageContext*)malloc(sizeof(CodePageContext));
 
-    ctx.is_valid = 0;
-    ctx.magic = h->magic;
-    ctx.code_page = h->code_page;
-    ctx.is_stateful_ebcdic = 0;
-    ctx.is_gb18030 = 0;
-    ctx.is_32bit_pool = h->is_32bit_pool;
+    ctx->is_valid = 0;
+    ctx->magic = h->magic;
+    ctx->code_page = h->code_page;
+    ctx->is_stateful_ebcdic = 0;
+    ctx->is_gb18030 = 0;
+    ctx->is_32bit_pool = h->is_32bit_pool;
     
-    ctx.trail_windows = (const ResourceTrailWindow*)(blob_data + h->off_windows);
-    ctx.pool16 = (const unsigned short*)(blob_data + h->off_pool);
-    ctx.pool32 = (const unsigned long*)(blob_data + h->off_pool);
-    ctx.wchar_directory = (const unsigned short*)(blob_data + h->off_dir);
-    ctx.wchar_dir_count = h->wchar_dir_count; /* NEW: Stored safely in context */
-    ctx.wchar_page_pool = (const unsigned short*)(blob_data + h->off_pages);
+    ctx->trail_windows = (const ResourceTrailWindow*)(blob_data + h->off_windows);
+    ctx->pool16 = (const unsigned short*)(blob_data + h->off_pool);
+    ctx->pool32 = (const unsigned long*)(blob_data + h->off_pool);
+    ctx->wchar_directory = (const unsigned short*)(blob_data + h->off_dir);
+    ctx->wchar_dir_count = h->wchar_dir_count; /* NEW: Stored safely in context */
+    ctx->wchar_page_pool = (const unsigned short*)(blob_data + h->off_pages);
     
-    ctx.ext_b_table = 0;
-    ctx.ext_b_count = 0;
-    ctx.gb_ranges = 0;
-    ctx.gb_range_count = 0;
-    ctx.dbcs_lead_table = 0;
-    ctx.sbcs_table = 0;
-    ctx.dbcs_first_byte_table = 0;
+    ctx->ext_b_table = 0;
+    ctx->ext_b_count = 0;
+    ctx->gb_ranges = 0;
+    ctx->gb_range_count = 0;
+    ctx->dbcs_lead_table = 0;
+    ctx->sbcs_table = 0;
+    ctx->dbcs_first_byte_table = 0;
 
     /* Route 1: GB18030 Engine Configuration */
     if (h->magic == 0x38314247) { /* 'GB18' */
-        ctx.is_gb18030 = 1;
-        ctx.dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
-        ctx.gb_ranges = (const GB18030Range*)(blob_data + h->off_extra);
-        ctx.gb_range_count = h->extra_count;
-        ctx.is_valid = 1;
+        ctx->is_gb18030 = 1;
+        ctx->dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx->gb_ranges = (const GB18030Range*)(blob_data + h->off_extra);
+        ctx->gb_range_count = h->extra_count;
+        ctx->is_valid = 1;
     }
     /* Route 2: Stateful EBCDIC Configuration */
     else if (h->magic == 0x39313243) { /* 'C219' */
-        ctx.is_stateful_ebcdic = 1;
-        ctx.sbcs_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
-        ctx.dbcs_first_byte_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader) + 512);
-        ctx.is_valid = 1;
+        ctx->is_stateful_ebcdic = 1;
+        ctx->sbcs_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx->dbcs_first_byte_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader) + 512);
+        ctx->is_valid = 1;
     }
     /* Route 3: Standard Stateless DBCS Configuration */
     else if (h->magic == 0x4C425043) { /* 'CPBL' */
-        ctx.dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx->dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
         if (h->off_extra != 0) {
-            ctx.ext_b_table = (const ExtBMapping*)(blob_data + h->off_extra);
-            ctx.ext_b_count = h->extra_count;
+            ctx->ext_b_table = (const ExtBMapping*)(blob_data + h->off_extra);
+            ctx->ext_b_count = h->extra_count;
         }
-        ctx.is_valid = 1;
+        ctx->is_valid = 1;
     }
 
     return ctx;
+}
+
+void FreeCodePageConverter(CodePageContext* ctx) {
+    free(ctx);
 }
 
 /* ========================================================================= */

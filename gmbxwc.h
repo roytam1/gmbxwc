@@ -1,6 +1,7 @@
 #ifndef _GMBXWC_H_
 #define _GMBXWC_H_
 
+#include <stdlib.h>
 #include <windows.h>
 
 /* Struct layouts for the raw binary blobs */
@@ -70,6 +71,8 @@ typedef struct {
 #define EBCDIC_MODE_DBCS 1
 
 /* Unified Conversion Functions */
+CodePageContext* InitCodePageConverter(const unsigned char* blob_data);
+void FreeCodePageConverter(CodePageContext* ctx);
 unsigned long CodePage_MB2WC(const CodePageContext* ctx, 
                       const unsigned char* src, unsigned long src_len, 
                       wchar_t* dest, unsigned long dest_max, BOOL* lpbUnmapped);
