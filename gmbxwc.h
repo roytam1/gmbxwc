@@ -34,7 +34,7 @@ typedef struct {
     unsigned long off_extra;     /* Points to ExtB table OR GB18030 range table */
     unsigned long extra_count;   /* Holds count for extra tracking entries */
     unsigned long is_32bit_pool;
-    unsigned long wchar_dir_count;   /* NEW: Total elements in the page directory */
+    unsigned long def_char;   /* NEW: Code Page specified default char for unmapped */
 } CodePageHeader;
 
 /* Unified Context Structure */
@@ -50,8 +50,8 @@ typedef struct {
     const unsigned short* pool16;
     const unsigned long* pool32;
     const unsigned short* wchar_directory;
-    unsigned long wchar_dir_count; /* NEW: Added to context boundary check */
     const unsigned short* wchar_page_pool;
+    unsigned long def_char; /* NEW: Code Page specified default char for unmapped */
     
     /* Extension B Mapping context */
     const ExtBMapping* ext_b_table;

@@ -57,7 +57,7 @@ def parse_csv(filename, is_gb18030):
 
     return sbcs_map, dbcs_map, wc2mb, dbcs_first_bytes, gb_ranges, ext_b_mappings
 
-def build_blob(csv_path, cp_num, style):
+def build_blob(csv_path, cp_num, style, defchar):
     is_ebcdic = (style == "-ebcdic")
     is_gb18030 = (style == "-gb18030")
     
@@ -109,11 +109,10 @@ def build_blob(csv_path, cp_num, style):
     off_pages = off_dir + (len(page_directory) * 2)
     off_extra = off_pages + (len(unique_pages) * 512)
     extra_count = len(gb_ranges) if is_gb18030 else len(ext_b_mappings)
-    wchar_dir_count = len(page_directory)
 
     blob = bytearray()
     # Header format: magic, cp, windows, pool, dir, pages, extra, count, is_32bit_pool
-    blob.extend(struct.pack('<4sIIIIIIIII', magic, cp_num, off_windows, off_pool, off_dir, off_pages, off_extra, extra_count, is_32bit_pool, wchar_dir_count))
+    blob.extend(struct.pack('<4sIIIIIIIII', magic, cp_num, off_windows, off_pool, off_dir, off_pages, off_extra, extra_count, is_32bit_pool, defchar))
     
     if is_ebcdic:
         for val in sbcs_table: blob.extend(struct.pack('<H', val))
@@ -142,12 +141,12 @@ def build_blob(csv_path, cp_num, style):
     return blob
 
 def main():
-    if len(sys.argv) < 6:
-        print("Usage: python build_cpbl_csv.py <csv_file> <output_file> -style [-bin|-c] <cp_id>")
+    if len(sys.argv) < 7:
+        print("Usage: python build_cpbl_csv.py <csv_file> <output_file> -style [-bin|-c] <cp_id> <def_char>")
         sys.exit(1)
     
-    csv_file, out_file, style, out_flag, cp_id = sys.argv[1], sys.argv[2], sys.argv[3].lower(), sys.argv[4].lower(), int(sys.argv[5])
-    blob = build_blob(csv_file, cp_id, style)
+    csv_file, out_file, style, out_flag, cp_id, def_char = sys.argv[1], sys.argv[2], sys.argv[3].lower(), sys.argv[4].lower(), int(sys.argv[5]), int(sys.argv[6], 0)
+    blob = build_blob(csv_file, cp_id, style, def_char)
     
     if out_flag == "-c":
         with open(out_file, 'w') as f:

@@ -73,10 +73,10 @@ def parse_nls(nls_path):
                     else:
                         wc2mb_map[uc] = mb
 
-    return code_page, sbcs_map, dbcs_map, dbcs_first_bytes, wc2mb_map
+    return code_page, sbcs_map, dbcs_map, dbcs_first_bytes, wc2mb_map, def_char0
 
 def build_unified_blob(nls_path):
-    code_page, sbcs_map, dbcs_map, dbcs_first_bytes, wc2mb_map = parse_nls(nls_path)
+    code_page, sbcs_map, dbcs_map, dbcs_first_bytes, wc2mb_map, defchar = parse_nls(nls_path)
     
     base_header_size = 40
     dbcs_lead_table = [0] * 256
@@ -123,11 +123,10 @@ def build_unified_blob(nls_path):
     off_dir = off_pool + (len(trail_pool) * pool_stride)
     off_pages = off_dir + (len(page_directory) * 2)
     off_extra = off_pages + (len(unique_pages) * 512)
-    wchar_dir_count = len(page_directory)
 
     # Pack strict 36-Byte layout boundary header
     blob = bytearray()
-    blob.extend(struct.pack('<4sIIIIIIIII', b'CPBL', code_page, off_windows, off_pool, off_dir, off_pages, off_extra, 0, is_32bit_pool, wchar_dir_count))
+    blob.extend(struct.pack('<4sIIIIIIIII', b'CPBL', code_page, off_windows, off_pool, off_dir, off_pages, off_extra, 0, is_32bit_pool, defchar))
     
     for val in dbcs_lead_table: blob.extend(struct.pack('<H', val))
     for win in trail_windows: blob.extend(win)

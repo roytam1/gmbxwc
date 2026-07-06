@@ -15,7 +15,7 @@ CodePageContext* InitCodePageConverter(const unsigned char* blob_data) {
     ctx->pool16 = (const unsigned short*)(blob_data + h->off_pool);
     ctx->pool32 = (const unsigned long*)(blob_data + h->off_pool);
     ctx->wchar_directory = (const unsigned short*)(blob_data + h->off_dir);
-    ctx->wchar_dir_count = h->wchar_dir_count; /* NEW: Stored safely in context */
+    ctx->def_char = h->def_char; /* NEW: Code Page specified default char for unmapped */
     ctx->wchar_page_pool = (const unsigned short*)(blob_data + h->off_pages);
     
     ctx->ext_b_table = 0;
@@ -263,7 +263,7 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
             unsigned long page_num = cp_val >> 8;
 
             /* Guard directory access against structural table bounds */
-            if (page_num < ctx->wchar_dir_count) {
+            if (page_num < 0x100) {
                 page_idx = ctx->wchar_directory[page_num];
                 if (page_idx != 0xFFFF) {
                     trie_dbcs = ctx->wchar_page_pool[page_idx * 256 + (cp_val & 0xFF)];
@@ -309,7 +309,7 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
                 }
                 if (!found) {
                     if (lpbUnmapped) *lpbUnmapped = TRUE;
-                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = '?'; } else { written++; }
+                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)ctx->def_char; } else { written++; }
                 }
             }
             continue;
@@ -322,7 +322,7 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
             unsigned long page_num = cp_val >> 8;
 
             /* Case A: Character lives in the BMP -> Fast O(1) 2-Tier Array Lookup */
-            if (page_num < ctx->wchar_dir_count) {
+            if (page_num < 0x100) {
                 unsigned short page_idx = ctx->wchar_directory[page_num];
 
                 if (page_idx != 0xFFFF) {
@@ -364,7 +364,7 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
 
             if (is_unmapped_char) {
                 if (lpbUnmapped) *lpbUnmapped = TRUE;
-                target_mb = ctx->is_stateful_ebcdic ? 0x6F : 0x3F; /* '?' fallback string */
+                target_mb = ctx->def_char; /* fallback string */
             }
 
             /* State-dependent structural serialization step */
