@@ -31,23 +31,29 @@ python build_cpbl_ucm.py ibm-933_P110-1995.ucm IBM933.DAT -ebcdic -bin 21933 0x6
 rem IBM EBCDIC Simplified Chinese Host mixed with 1880 UDC, superset of 5031
 python build_cpbl_ucm.py ibm-935_P110-1999.ucm IBM935.DAT -ebcdic -bin 21935 0x6f
 
-rem legacy NLS CP20000
+rem EUC-JP (ICU)
+python build_cpbl_ucm.py euc-jp-2007.ucm EUCJP.DAT -stateless -bin 21932 0x3f
+
+rem EUC-TW (ICU)
+python build_cpbl_ucm.py euc-tw-2014.ucm EUCTW.DAT -stateless -bin 21950 0x3f
+
+rem legacy NLS CP20000 (Chinese Traditional EUC-TW/CNS-MS)
 python build_cpbl_nls.py c_20000.nls c_20000.dat
 
-rem legacy NLS CP20001
+rem legacy NLS CP20001 (Chinese Traditional TCA)
 python build_cpbl_nls.py c_20001.nls c_20001.dat
 
-rem legacy NLS CP20002
+rem legacy NLS CP20002 (Chinese Traditional ETen)
 python build_cpbl_nls.py c_20002.nls c_20002.dat
 
-rem legacy NLS CP20003
+rem legacy NLS CP20003 (Chinese Traditional IBM5550)
 python build_cpbl_nls.py c_20003.nls c_20003.dat
 
-rem legacy NLS CP20004
+rem legacy NLS CP20004 (Chinese Traditional Teletext)
 python build_cpbl_nls.py c_20004.nls c_20004.dat
 
-rem legacy NLS CP20005
+rem legacy NLS CP20005 (Chinese Traditional Wang)
 python build_cpbl_nls.py c_20005.nls c_20005.dat
 
-rem legacy NLS CP20932
+rem legacy NLS CP20932 (ENC-JP-MS)
 python build_cpbl_nls.py c_20932.nls c_20932.dat
