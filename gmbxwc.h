@@ -8,8 +8,9 @@
 typedef struct {
     unsigned char min_trail;
     unsigned char max_trail;
-    unsigned short reserved;
-    unsigned long pool_offset;
+    unsigned char action_type; /* 0 = Leaf Trail, 1 = Leaf Single, 2 = Intermediate Node */
+    unsigned char reserved;
+    unsigned long pool_offset; /* If action_type == 2, this is the NEXT window index! */
 } ResourceTrailWindow;
 
 typedef struct {

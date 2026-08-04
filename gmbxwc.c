@@ -173,37 +173,70 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                 }
             }
         } 
-        /* Path B: Stateless DBCS Logic (Big5, Shift-JIS, etc) */
+        /* Path B: Stateless Multi-Byte Logic (Big5, Shift-JIS, EUC-JP, EUC-TW, etc.) */
         else {
             unsigned short lead_info = ctx->dbcs_lead_table[b1];
+
+            /* Single-byte / Direct ASCII Match */
             if ((lead_info & 0x8000) == 0) {
                 cp_val = b1 && lead_info ? lead_info : 0xFFFD;
                 if (cp_val == 0xFFFD || (cp_val == 0 && b1 != 0)) {
                     if (lpbUnmapped) *lpbUnmapped = TRUE;
                 }
-            } else {
-                if (src >= src_end) {
-                    if (lpbUnmapped) *lpbUnmapped = TRUE;
-                    break;
-                }
-                {
-                    unsigned char b2_real = *src++;
-                    unsigned short w_idx = lead_info & 0x7FFF;
-                    ResourceTrailWindow w = ctx->trail_windows[w_idx];
+            } 
+            /* Multi-Byte Match (2-Byte, 3-Byte, or 4-Byte sequences) */
+            else {
+                unsigned short w_idx = lead_info & 0x7FFF;
+                ResourceTrailWindow w = ctx->trail_windows[w_idx];
 
-                    if (b2_real >= w.min_trail && b2_real <= w.max_trail) {
-                        if (ctx->is_32bit_pool) {
-                            cp_val = ctx->pool32[w.pool_offset + (b2_real - w.min_trail)];
+                /* 
+                 * NEW: Intermediate Node Traversal for 3-byte and 4-byte sequences.
+                 * If is_single_byte == 2, this window is an intermediate routing node.
+                 * We consume bytes until we land on a leaf node (is_single_byte == 0).
+                 */
+                while (w.action_type == 2) {
+                    if (src >= src_end) {
+                        cp_val = 0xFFFD;
+                        if (lpbUnmapped) *lpbUnmapped = TRUE;
+                        break;
+                    }
+                    {
+                        unsigned char b_next = *src++;
+                        if (b_next >= w.min_trail && b_next <= w.max_trail) {
+                            /* Hop to the child window index */
+                            w_idx = (unsigned short)(w.pool_offset + (b_next - w.min_trail));
+                            w = ctx->trail_windows[w_idx];
                         } else {
-                            cp_val = ctx->pool16[w.pool_offset + (b2_real - w.min_trail)];
+                            /* Byte fell outside valid range for this sequence */
+                            cp_val = 0xFFFD;
+                            if (lpbUnmapped) *lpbUnmapped = TRUE;
+                            break;
                         }
-                        if (cp_val == 0 || cp_val == 0xFFFD) {
+                    }
+                }
+
+                /* Final Trail Byte Evaluation (Leaf Node) */
+                if (cp_val != 0xFFFD) {
+                    if (src >= src_end) {
+                        cp_val = 0xFFFD;
+                        if (lpbUnmapped) *lpbUnmapped = TRUE;
+                    } else {
+                        unsigned char b2_real = *src++;
+                        if (b2_real >= w.min_trail && b2_real <= w.max_trail) {
+                            if (ctx->is_32bit_pool) {
+                                cp_val = ctx->pool32[w.pool_offset + (b2_real - w.min_trail)];
+                            } else {
+                                cp_val = ctx->pool16[w.pool_offset + (b2_real - w.min_trail)];
+                            }
+
+                            if (cp_val == 0 || cp_val == 0xFFFD) {
+                                cp_val = 0xFFFD;
+                                if (lpbUnmapped) *lpbUnmapped = TRUE;
+                            }
+                        } else {
                             cp_val = 0xFFFD;
                             if (lpbUnmapped) *lpbUnmapped = TRUE;
                         }
-                    } else {
-                        cp_val = 0xFFFD;
-                        if (lpbUnmapped) *lpbUnmapped = TRUE;
                     }
                 }
             }
@@ -388,14 +421,39 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
                 }
             } else {
                 /* Standard Stateless MultiByte Writer (Shift-JIS, Big5-HKSCS, etc.) */
-                if (target_mb <= 0xFF) {
-                    if (dest) { if (written + 1 > dest_max) break; dest[written++] = (unsigned char)target_mb; } else { written++; }
-                } else {
+                if (target_mb > 0xFFFFFF) {
+                    /* 4-byte sequence (e.g., EUC-TW) */
                     if (dest) {
-                        if (written + 2 > dest_max) break;
-                        dest[written++] = (unsigned char)(target_mb >> 8);
+                        if (written + 3 >= dest_max) break;
+                        dest[written++] = (unsigned char)((target_mb >> 24) & 0xFF);
+                        dest[written++] = (unsigned char)((target_mb >> 16) & 0xFF);
+                        dest[written++] = (unsigned char)((target_mb >> 8)  & 0xFF);
                         dest[written++] = (unsigned char)(target_mb & 0xFF);
-                    } else { written += 2; }
+                    } else written += 4;
+                } 
+                else if (target_mb > 0xFFFF) {
+                    /* 3-byte sequence (e.g., EUC-JP) */
+                    if (dest) {
+                        if (written + 2 >= dest_max) break;
+                        dest[written++] = (unsigned char)((target_mb >> 16) & 0xFF);
+                        dest[written++] = (unsigned char)((target_mb >> 8)  & 0xFF);
+                        dest[written++] = (unsigned char)(target_mb & 0xFF);
+                    } else written += 3;
+                } 
+                else if (target_mb > 0xFF) {
+                    /* 2-byte sequence (Standard DBCS) */
+                    if (dest) {
+                        if (written + 1 >= dest_max) break;
+                        dest[written++] = (unsigned char)((target_mb >> 8) & 0xFF);
+                        dest[written++] = (unsigned char)(target_mb & 0xFF);
+                    } else written += 2;
+                } 
+                else {
+                    /* 1-byte sequence (ASCII / SBCS) */
+                    if (dest) {
+                        if (written >= dest_max) break;
+                        dest[written++] = (unsigned char)(target_mb & 0xFF);
+                    } else written += 1;
                 }
             }
         }
