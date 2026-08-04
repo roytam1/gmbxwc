@@ -173,27 +173,24 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                 }
             }
         } 
-        /* Path B: Stateless Multi-Byte Logic (Big5, Shift-JIS, EUC-JP, EUC-TW, etc.) */
+        /* Path B: Stateless Multi-Byte Logic (Big5, Shift-JIS, EUC-JP, EUC-TW, etc) */
         else {
             unsigned short lead_info = ctx->dbcs_lead_table[b1];
 
-            /* Single-byte / Direct ASCII Match */
+            /* Single-byte character (ASCII, Half-width Katakana, etc.) */
             if ((lead_info & 0x8000) == 0) {
-                cp_val = b1 && lead_info ? lead_info : 0xFFFD;
-                if (cp_val == 0xFFFD || (cp_val == 0 && b1 != 0)) {
+                cp_val = ctx->sbcs_table[b1];
+                if (cp_val == 0 || cp_val == 0xFFFD) {
+                    cp_val = (b1 == 0) ? 0 : 0xFFFD;
                     if (lpbUnmapped) *lpbUnmapped = TRUE;
                 }
             } 
-            /* Multi-Byte Match (2-Byte, 3-Byte, or 4-Byte sequences) */
+            /* Multi-byte sequence lead byte */
             else {
                 unsigned short w_idx = lead_info & 0x7FFF;
                 ResourceTrailWindow w = ctx->trail_windows[w_idx];
 
-                /* 
-                 * NEW: Intermediate Node Traversal for 3-byte and 4-byte sequences.
-                 * If is_single_byte == 2, this window is an intermediate routing node.
-                 * We consume bytes until we land on a leaf node (is_single_byte == 0).
-                 */
+                /* Intermediate Node Traversal (3-byte / 4-byte sequences) */
                 while (w.action_type == 2) {
                     if (src >= src_end) {
                         cp_val = 0xFFFD;
@@ -203,11 +200,9 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                     {
                         unsigned char b_next = *src++;
                         if (b_next >= w.min_trail && b_next <= w.max_trail) {
-                            /* Hop to the child window index */
                             w_idx = (unsigned short)(w.pool_offset + (b_next - w.min_trail));
                             w = ctx->trail_windows[w_idx];
                         } else {
-                            /* Byte fell outside valid range for this sequence */
                             cp_val = 0xFFFD;
                             if (lpbUnmapped) *lpbUnmapped = TRUE;
                             break;
@@ -215,7 +210,7 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                     }
                 }
 
-                /* Final Trail Byte Evaluation (Leaf Node) */
+                /* Final Trail Byte Evaluation */
                 if (cp_val != 0xFFFD) {
                     if (src >= src_end) {
                         cp_val = 0xFFFD;
