@@ -4,10 +4,10 @@
 
 int main(int argc, char** argv) {
 	CodePageContext* cnvCtx;
-	unsigned char* cnvCPBL;
-	unsigned char* InData;
-	unsigned char* OutData;
-	FILE* fp;
+	unsigned char *cnvCPBL;
+	unsigned char *InData, *InDataPointer;
+	unsigned char *OutData;
+	FILE *fp;
 	unsigned long fsize, frsize, outchars;
 	BOOL unmap_trapped = 0;
 
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
 	fsize = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
 
-	InData = (unsigned char*)malloc(fsize);
+	InDataPointer = InData = (unsigned char*)malloc(fsize);
 	if(!InData) {
 		printf("unable to allocate memory for input file\n");
 		return 2;
@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
 
 	/* free all memory */
 	free(OutData);
-	free(InData);
+	free(InDataPointer);
 	FreeCodePageConverter(cnvCtx);
 	free(cnvCPBL);
 	return 0;
