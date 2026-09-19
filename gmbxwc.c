@@ -1,5 +1,10 @@
 #include "gmbxwc.h"
 
+/* GB18030 4-byte algorithmic base: bytes 90 30 81 30 (linear index 189000)
+   encode U+10000; every supplementary-plane codepoint maps as
+   index = codepoint - 0x10000 + GB18030_SUPP_INDEX_BASE. */
+#define GB18030_SUPP_INDEX_BASE 189000UL
+
 CodePageContext* InitCodePageConverter(const unsigned char* blob_data) {
     const CodePageHeader* h = (const CodePageHeader*)blob_data;
     CodePageContext* ctx = (CodePageContext*)malloc(sizeof(CodePageContext));
@@ -29,7 +34,8 @@ CodePageContext* InitCodePageConverter(const unsigned char* blob_data) {
     /* Route 1: GB18030 Engine Configuration */
     if (h->magic == 0x38314247) { /* 'GB18' */
         ctx->is_gb18030 = 1;
-        ctx->dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx->sbcs_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx->dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader) + 512);
         ctx->gb_ranges = (const GB18030Range*)(blob_data + h->off_extra);
         ctx->gb_range_count = h->extra_count;
         ctx->is_valid = 1;
@@ -43,7 +49,8 @@ CodePageContext* InitCodePageConverter(const unsigned char* blob_data) {
     }
     /* Route 3: Standard Stateless DBCS Configuration */
     else if (h->magic == 0x4C425043) { /* 'CPBL' */
-        ctx->dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx->sbcs_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader));
+        ctx->dbcs_lead_table = (const unsigned short*)(blob_data + sizeof(CodePageHeader) + 512);
         if (h->off_extra != 0) {
             ctx->ext_b_table = (const ExtBMapping*)(blob_data + h->off_extra);
             ctx->ext_b_count = h->extra_count;
@@ -77,7 +84,11 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
         if (ctx->is_gb18030) {
             unsigned short lead_info = ctx->dbcs_lead_table[b1];
             if ((lead_info & 0x8000) == 0) {
-                cp_val = lead_info; /* 1-Byte ASCII Match */
+                cp_val = ctx->sbcs_table[b1]; /* 1-Byte SBCS Match */
+                if (cp_val == 0 || cp_val == 0xFFFD) {
+                    cp_val = (b1 == 0) ? 0 : 0xFFFD;
+                    if (lpbUnmapped) *lpbUnmapped = TRUE;
+                }
             } else {
                 if (src >= src_end) {
                     if (lpbUnmapped) *lpbUnmapped = TRUE;
@@ -99,6 +110,7 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                             long left = 0;
                             long right = (long)ctx->gb_range_count - 1;
                             int range_found = 0;
+                            unsigned long supp_cp = 0;
 
                             cp_val = 0xFFFD;
                             while (left <= right) {
@@ -111,6 +123,14 @@ unsigned long CodePage_MB2WC(const CodePageContext* ctx, const unsigned char* sr
                                 }
                                 if (r->start_index < idx) left = mid + 1;
                                 else right = mid - 1;
+                            }
+                            if (!range_found && idx >= GB18030_SUPP_INDEX_BASE) {
+                                /* Algorithmic supplementary-plane mapping */
+                                supp_cp = idx - GB18030_SUPP_INDEX_BASE + 0x10000UL;
+                                if (supp_cp <= 0x10FFFFUL) {
+                                    cp_val = supp_cp;
+                                    range_found = 1;
+                                }
                             }
                             if (!range_found) {
                                 if (lpbUnmapped) *lpbUnmapped = TRUE;
@@ -313,18 +333,34 @@ unsigned long CodePage_WC2MB(const CodePageContext* ctx, const wchar_t* src, uns
                 long left = 0;
                 long right = (long)ctx->gb_range_count - 1;
                 int found = 0;
-                while (left <= right) {
+                unsigned char b4, b3, b2, b1;
+                unsigned long idx = 0;
+                if (cp_val >= 0x10000UL && cp_val <= 0x10FFFFUL) {
+                    /* Supplementary-plane codepoints map algorithmically */
+                    idx = cp_val - 0x10000UL + GB18030_SUPP_INDEX_BASE;
+                    b4 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
+                    b3 = (unsigned char)(0x81 + (idx % 126)); idx /= 126;
+                    b2 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
+                    b1 = (unsigned char)(0x81 + idx);
+
+                    if (dest) {
+                        if (written + 4 > dest_max) break;
+                        dest[written++] = b1; dest[written++] = b2;
+                        dest[written++] = b3; dest[written++] = b4;
+                    } else { written += 4; }
+                    found = 1;
+                }
+                while (!found && left <= right) {
                     long mid = left + (right - left) / 2;
                     const GB18030Range* r = &ctx->gb_ranges[mid];
                     unsigned long r_len = r->end_index - r->start_index;
                     if (cp_val >= r->start_unicode && cp_val <= (r->start_unicode + r_len)) {
-                        unsigned char b4, b3, b2, b1;
-                        unsigned long idx = r->start_index + (cp_val - r->start_unicode);
+                        idx = r->start_index + (cp_val - r->start_unicode);
                         b4 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
                         b3 = (unsigned char)(0x81 + (idx % 126)); idx /= 126;
                         b2 = (unsigned char)(0x30 + (idx % 10)); idx /= 10;
                         b1 = (unsigned char)(0x81 + idx);
-                        
+
                         if (dest) {
                             if (written + 4 > dest_max) break;
                             dest[written++] = b1; dest[written++] = b2;
