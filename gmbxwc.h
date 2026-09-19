@@ -71,15 +71,44 @@ typedef struct {
 #define EBCDIC_MODE_SBCS 0
 #define EBCDIC_MODE_DBCS 1
 
+/* DLL import/export linkage (empty for static builds) */
+#if defined(GMBXWC_BUILD_DLL)
+#define GMBXWC_API __declspec(dllexport)
+#elif defined(GMBXWC_USE_DLL)
+#define GMBXWC_API __declspec(dllimport)
+#else
+#define GMBXWC_API
+#endif
+
 /* Unified Conversion Functions */
-CodePageContext* InitCodePageConverter(const unsigned char* blob_data);
-void FreeCodePageConverter(CodePageContext* ctx);
-unsigned long CodePage_MB2WC(const CodePageContext* ctx, 
+GMBXWC_API CodePageContext* InitCodePageConverter(const unsigned char* blob_data);
+GMBXWC_API void FreeCodePageConverter(CodePageContext* ctx);
+GMBXWC_API unsigned long CodePage_MB2WC(const CodePageContext* ctx, 
                       const unsigned char* src, unsigned long src_len, 
                       wchar_t* dest, unsigned long dest_max, BOOL* lpbUnmapped);
 
-unsigned long CodePage_WC2MB(const CodePageContext* ctx, 
+GMBXWC_API unsigned long CodePage_WC2MB(const CodePageContext* ctx, 
                       const wchar_t* src, unsigned long src_len, 
+                      unsigned char* dest, unsigned long dest_max, BOOL* lpbUnmapped);
+
+/* Embedded-table inventory (gmbxwc.dll resources, dense 0-based index).
+   The index IS the integer identifier: pass it to CodePage_CreateConverter,
+   CodePage_IndexedMB2WC, or CodePage_IndexedWC2MB. */
+typedef struct {
+    unsigned long code_page;   /* Windows codepage ID, e.g. 932, 54936, 21937, 20000 */
+    const char* blob_name;     /* CPBL filename baked into the DLL, e.g. "CP932.DAT" */
+    const char* display_name;  /* Human-readable label, e.g. "Shift-JIS (CP932)" */
+} EmbeddedTableInfo;
+
+GMBXWC_API unsigned long CodePage_EmbeddedCount(void);
+GMBXWC_API BOOL CodePage_EmbeddedInfo(unsigned long index, EmbeddedTableInfo* p_info);
+GMBXWC_API BOOL CodePage_FindIndexForCodePage(unsigned long code_page, unsigned long* p_index);
+GMBXWC_API CodePageContext* CodePage_CreateConverter(unsigned long index);
+GMBXWC_API unsigned long CodePage_IndexedMB2WC(unsigned long index,
+                      const unsigned char* src, unsigned long src_len,
+                      wchar_t* dest, unsigned long dest_max, BOOL* lpbUnmapped);
+GMBXWC_API unsigned long CodePage_IndexedWC2MB(unsigned long index,
+                      const wchar_t* src, unsigned long src_len,
                       unsigned char* dest, unsigned long dest_max, BOOL* lpbUnmapped);
 
 #if 0

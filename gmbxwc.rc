@@ -1,0 +1,24 @@
+/* gmbxwc.rc - embeds all 20 CPBL tables into gmbxwc.dll.
+ * Resource ID = 1000 + dense index (see g_tables[] in gmbxwc_dll.c).
+ * Keep filenames, order, and IDs in sync with gmbxwc_dll.c.
+ */
+1000 CPBL "CP932.DAT"
+1001 CPBL "CP936.DAT"
+1002 CPBL "CP949.DAT"
+1003 CPBL "CP950.DAT"
+1004 CPBL "HKSCS2K8.DAT"
+1005 CPBL "GB18030.DAT"
+1006 CPBL "IBM937.DAT"
+1007 CPBL "IBM939.DAT"
+1008 CPBL "IBM930.DAT"
+1009 CPBL "IBM933.DAT"
+1010 CPBL "IBM935.DAT"
+1011 CPBL "EUCJP.DAT"
+1012 CPBL "EUCTW.DAT"
+1013 CPBL "c_20000.dat"
+1014 CPBL "c_20001.dat"
+1015 CPBL "c_20002.dat"
+1016 CPBL "c_20003.dat"
+1017 CPBL "c_20004.dat"
+1018 CPBL "c_20005.dat"
+1019 CPBL "c_20932.dat"
