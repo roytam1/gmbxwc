@@ -1,0 +1,22 @@
+Done. `dll_add_cpbl.py` is in the repo root, tested end-to-end, and listed in AGENTS.md.
+
+## Usage
+```bat
+python dll_add_cpbl.py <table.DAT> <codepage> "<display name>" [--no-build]
+```
+Example: `python dll_add_cpbl.py CP957.DAT 957 "Johab (CP957)"`
+
+## What it does
+1. **Stages the DAT** next to the sources (copies it in if given from elsewhere; `windres` needs it alongside `gmbxwc.rc`), then reads its 40-byte header and requires `header.code_page` to equal your `<codepage>` argument ¡X the DLL validates this at runtime too, so a mismatch would be a dead entry.
+2. **Cross-checks** `gmbxwc_dll.c` vs `gmbxwc.rc` (same count, IDs `1000+i`, filenames in order) and aborts on any drift, then refuses duplicates (same codepage or blob already embedded).
+3. **Appends only**: new `{ cp, "blob", "display" }` entry at the end of `g_tables[]` (index = old count), new `<id> CPBL "<blob>"` resource line, and bumps the "Embeds all N" comments in both files. Existing order/IDs never move.
+4. **Rebuilds** with the exact `mkdll.bat` commands (skipped with `--no-build`; exits 2 with a PATH hint if `windres`/`gcc` are missing).
+5. **Smoke-checks** via ctypes: loads the fresh DLL and asserts `CodePage_EmbeddedCount()` equals the new count.
+
+## Verification (sandbox in `%TEMP%\dlladdtest`, repo untouched)
+- Added spare `mini-hkscs.DAT` (CP952) ¡÷ index 20, res ID 1020, counts 20¡÷21.
+- Edited `gmbxwc_dll.c` is `gcc -std=c89 -pedantic -Wall` clean; edited `.rc` passes `windres`.
+- Full run rebuilt the DLL: count = 21, `CreateConverter(20)` valid, `CreateConverter(21)` NULL.
+- Negative tests: wrong codepage (`953`) and duplicate add both exit 1 with source files byte-identical (hash-checked).
+
+One reminder the script also prints: append the new index to the order list in AGENTS.md's DLL section (it documents the fixed order, which the script can't safely rewrite).
