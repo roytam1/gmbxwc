@@ -18,7 +18,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     (void)lpvReserved;
     if (fdwReason == DLL_PROCESS_ATTACH) {
         g_hGmbxwcInstance = hinstDLL;
-        DisableThreadLibraryCalls(hinstDLL);
+        /*DisableThreadLibraryCalls(hinstDLL);*/
     }
     return TRUE;
 }
