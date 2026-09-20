@@ -27,22 +27,32 @@
 
 #include "gmbxwc.h"
 
-typedef CodePageContext* (*PFN_InitCodePageConverter)(const unsigned char* blob_data);
-typedef void (*PFN_FreeCodePageConverter)(CodePageContext* ctx);
-typedef unsigned long (*PFN_CodePage_MB2WC)(const CodePageContext* ctx,
+/* The DLL boundary uses __cdecl. Spell it out: some consumers
+ * (e.g. GreenPad VS projects defaulting to FastCall) do not use
+ * a cdecl default, and an implicit convention would corrupt the
+ * stack on x86. Same reason chardet pointers spell __cdecl out.
+ * Harmless where __cdecl is already the default, and ignored on
+ * x64/ARM64. Override with -DGMBXWC_CALL=... if ever needed. */
+#ifndef GMBXWC_CALL
+#define GMBXWC_CALL __cdecl
+#endif
+
+typedef CodePageContext* (GMBXWC_CALL *PFN_InitCodePageConverter)(const unsigned char* blob_data);
+typedef void (GMBXWC_CALL *PFN_FreeCodePageConverter)(CodePageContext* ctx);
+typedef unsigned long (GMBXWC_CALL *PFN_CodePage_MB2WC)(const CodePageContext* ctx,
                       const unsigned char* src, unsigned long src_len,
                       wchar_t* dest, unsigned long dest_max, BOOL* lpbUnmapped);
-typedef unsigned long (*PFN_CodePage_WC2MB)(const CodePageContext* ctx,
+typedef unsigned long (GMBXWC_CALL *PFN_CodePage_WC2MB)(const CodePageContext* ctx,
                       const wchar_t* src, unsigned long src_len,
                       unsigned char* dest, unsigned long dest_max, BOOL* lpbUnmapped);
-typedef unsigned long (*PFN_CodePage_EmbeddedCount)(void);
-typedef BOOL (*PFN_CodePage_EmbeddedInfo)(unsigned long index, EmbeddedTableInfo* p_info);
-typedef BOOL (*PFN_CodePage_FindIndexForCodePage)(unsigned long code_page, unsigned long* p_index);
-typedef CodePageContext* (*PFN_CodePage_CreateConverter)(unsigned long index);
-typedef unsigned long (*PFN_CodePage_IndexedMB2WC)(unsigned long index,
+typedef unsigned long (GMBXWC_CALL *PFN_CodePage_EmbeddedCount)(void);
+typedef BOOL (GMBXWC_CALL *PFN_CodePage_EmbeddedInfo)(unsigned long index, EmbeddedTableInfo* p_info);
+typedef BOOL (GMBXWC_CALL *PFN_CodePage_FindIndexForCodePage)(unsigned long code_page, unsigned long* p_index);
+typedef CodePageContext* (GMBXWC_CALL *PFN_CodePage_CreateConverter)(unsigned long index);
+typedef unsigned long (GMBXWC_CALL *PFN_CodePage_IndexedMB2WC)(unsigned long index,
                       const unsigned char* src, unsigned long src_len,
                       wchar_t* dest, unsigned long dest_max, BOOL* lpbUnmapped);
-typedef unsigned long (*PFN_CodePage_IndexedWC2MB)(unsigned long index,
+typedef unsigned long (GMBXWC_CALL *PFN_CodePage_IndexedWC2MB)(unsigned long index,
                       const wchar_t* src, unsigned long src_len,
                       unsigned char* dest, unsigned long dest_max, BOOL* lpbUnmapped);
 
