@@ -27,7 +27,7 @@ import struct
 import sys
 
 SRC = "gmbxwc_dll.c"
-DEFAULT_OUT = "gmbxwc_bundle.dat"
+DEFAULT_OUT = "gmbxwc.dat"
 MAGIC = b"CPBX"
 VERSION = 1
 NAME_LEN = 32

@@ -72,7 +72,7 @@ Two DLL flavors share this API — pick one per binary (never link both glues to
 - **`gmbxwc.dll`** — all tables embedded as `CPBL` resources. Build: `mkdll.bat`
   (MSVC) or `mkdll-mingw.bat` (`windres` + `gcc -shared`, also makes `libgmbxwc.a`).
 - **`gmbxwc_ext.dll`** — same API, tables + inventory loaded from a single external
-  `gmbxwc_bundle.dat` (DLL directory, then CWD; auto-loaded on first use).
+  `gmbxwc.dat` (DLL directory, then CWD; auto-loaded on first use).
   Build: `mkext.bat`, then `python build_cpbl_bundle.py`. No bundle (or a corrupt
   one) means `EmbeddedCount() == 0` and converting entry points return NULL/0.
 
@@ -97,7 +97,7 @@ python dll_add_cpbl.py <table.DAT> <codepage> "<display name>" [--no-build]
 ```
 
 Validates the blob header, appends to `g_tables[]` + `gmbxwc.rc` (append-only),
-re-packs `gmbxwc_bundle.dat`, rebuilds, and smoke-checks the count. Then extend
+re-packs `gmbxwc.dat`, rebuilds, and smoke-checks the count. Then extend
 the index table above and in `AGENTS.md`.
 
 ## Blob format (summary)

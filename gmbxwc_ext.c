@@ -32,7 +32,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define GMBXWC_BUNDLE_NAME "gmbxwc_bundle.dat"
+#define GMBXWC_BUNDLE_NAME "gmbxwc.dat"
 #define GMBXWC_BUNDLE_MAGIC 0x58425043UL /* 'CPBX' */
 #define GMBXWC_BUNDLE_VERSION 1UL
 #define GMBXWC_BUNDLE_MAX_TABLES 256UL
