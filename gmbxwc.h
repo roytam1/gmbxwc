@@ -96,7 +96,7 @@ GMBXWC_API unsigned long CodePage_WC2MB(const CodePageContext* ctx,
    CodePage_IndexedMB2WC, or CodePage_IndexedWC2MB. */
 typedef struct {
     unsigned long code_page;   /* Windows codepage ID, e.g. 932, 54936, 21937, 20000 */
-    const char* blob_name;     /* CPBL filename baked into the DLL, e.g. "CP932.DAT" */
+    const char* blob_name;     /* CPBL filename (resource in gmbxwc.dll, entry in the ext bundle) */
     const char* display_name;  /* Human-readable label, e.g. "Shift-JIS (CP932)" */
 } EmbeddedTableInfo;
 

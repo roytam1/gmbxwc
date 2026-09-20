@@ -9,7 +9,9 @@ Example:
 
 This appends one entry to g_tables[] in gmbxwc_dll.c and one resource line
 to gmbxwc.rc (ID = 1000 + dense index, append-only: existing order and IDs
-are never touched), then rebuilds gmbxwc.dll + libgmbxwc.a like mkdll.bat.
+are never touched), re-packs gmbxwc_bundle.dat (inventory is read from
+gmbxwc_dll.c, so gmbxwc_ext.dll picks the table up with no source change),
+then rebuilds gmbxwc.dll + libgmbxwc.a like mkdll.bat.
 
 Stock Python 3 only (struct, re, shutil, subprocess, ctypes).
 """
@@ -144,7 +146,13 @@ def main():
     print("index %d: cp=%d blob=%s res_id=%d (%s)"
           % (index, code_page, blob_name, res_id, magic.decode("ascii")))
 
-    # 5. Rebuild (same commands as mkdll.bat).
+    # 5. Re-pack the external bundle (needs no compiler).
+    if do_build:
+        cmd = [sys.executable, "build_cpbl_bundle.py"]
+        print("+ " + " ".join(cmd))
+        subprocess.check_call(cmd)
+
+    # 6. Rebuild (same commands as mkdll.bat).
     if do_build:
         windres = shutil.which("windres")
         gcc = shutil.which("gcc")
