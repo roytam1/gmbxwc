@@ -3,7 +3,7 @@
  * Same dense 0-based index API as gmbxwc_dll.c (declared in gmbxwc.h),
  * but the CPBL blobs AND the inventory come from a single external
  * bundle file instead of Windows resources. The bundle (default
- * gmbxwc_bundle.dat, built with build_cpbl_bundle.py from the g_tables[]
+ * gmbxwc.dat, built with build_cpbl_bundle.py from the g_tables[]
  * inventory in gmbxwc_dll.c) is auto-loaded on first use: first from the
  * directory holding this DLL, then from the current directory.
  *
@@ -59,7 +59,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
         g_hExtInstance = hinstDLL;
         InitializeCriticalSection(&g_cs);
         g_cs_ready = 1;
-        DisableThreadLibraryCalls(hinstDLL);
+        /*DisableThreadLibraryCalls(hinstDLL);*/
     } else if (fdwReason == DLL_PROCESS_DETACH) {
         if (g_bundle != NULL) {
             free(g_bundle);
