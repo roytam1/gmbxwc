@@ -9,7 +9,7 @@ Example:
 
 This appends one entry to g_tables[] in gmbxwc_dll.c and one resource line
 to gmbxwc.rc (ID = 1000 + dense index, append-only: existing order and IDs
-are never touched), re-packs gmbxwc_bundle.dat (inventory is read from
+are never touched), re-packs gmbxwc.dat (inventory is read from
 gmbxwc_dll.c, so gmbxwc_ext.dll picks the table up with no source change),
 then rebuilds gmbxwc.dll + libgmbxwc.a like mkdll.bat.
 
